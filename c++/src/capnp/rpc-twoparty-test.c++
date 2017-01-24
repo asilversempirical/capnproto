@@ -370,6 +370,41 @@ TEST(TwoPartyNetwork, HugeMessage) {
   }
 }
 
+TEST(TwoPartyNetwork, PipelineUnsentMessage) {
+  auto ioContext = kj::setupAsyncIo();
+  int callCount = 0;
+  int handleCount = 0;
+
+  auto serverThread = runServer(*ioContext.provider, callCount, handleCount);
+  TwoPartyVatNetwork network(*serverThread.pipe, rpc::twoparty::Side::CLIENT);
+  auto rpcClient = makeRpcClient(network);
+
+  auto client = getPersistentCap(rpcClient, rpc::twoparty::Side::SERVER,
+      test::TestSturdyRefObjectId::Tag::TEST_MORE_STUFF).castAs<test::TestMoreStuff>();
+
+  {
+    // Send an initial request that is larger than the traversal limits, so it shouldn't even send.
+    auto req = client.pipelineStringRequest();
+    req.initStr(100000000);  // 100MB
+
+    KJ_EXPECT_THROW_RECOVERABLE_MESSAGE("larger than our single-message size limit",
+        req.send().wait(ioContext.waitScope));
+  }
+
+  {
+    // The only difference here is that we don't `wait()` for the first req before pipelining the
+    // `getCallSequence` request, but instead of the expected error, we get
+    // "PromisedAnswer.questionId is not a current question."
+    auto req = client.pipelineStringRequest();
+    req.initStr(100000000);  // 100MB
+
+    auto pipelinedReq = req.send().getCap().getCallSequenceRequest();
+    pipelinedReq.setExpected(0);
+    KJ_EXPECT_THROW_RECOVERABLE_MESSAGE("larger than our single-message size limit",
+        pipelinedReq.send().wait(ioContext.waitScope));
+  }
+}
+
 class TestAuthenticatedBootstrapImpl final
     : public test::TestAuthenticatedBootstrap<rpc::twoparty::VatId>::Server {
 public:

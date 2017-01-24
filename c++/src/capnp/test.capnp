@@ -858,6 +858,9 @@ interface TestMoreStuff extends(TestCallOrder) {
 
   getEnormousString @11 () -> (str :Text);
   # Attempts to return an 100MB string. Should always fail.
+
+  pipelineString @13 (str :Text) -> (cap: TestMoreStuff);
+  # Sends a string (which is ignored) and returns a new capability.
 }
 
 interface TestMembrane {
